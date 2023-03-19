@@ -1,10 +1,13 @@
 import copy
 import time
+from typing import Any, Dict
 import ray
-import numpy
+import numpy as np
 import torch
+from equivariant_muzero.config import BaseConfig
+from equivariant_muzero.monte_carlo_tree_search import GameHistory
+from .checkpoint import Checkpoint
 
-import models
 
 @ray.remote
 class ReplayBuffer:
@@ -14,47 +17,57 @@ class ReplayBuffer:
 
     def __init__(
         self,
-        config,
-        initial_checkpoint,
-        initial_buffer,
+        config: BaseConfig,
+        buffer: Dict[int, GameHistory],
+        num_played_games: int = 0,
+        num_played_steps: int = 0,
     ):
         self.config = config
-        self.buffer = copy.deepcopy(initial_buffer)
-        self.num_played_games = initial_checkpoint["num_played_games"]
-        self.num_played_steps = initial_checkpoint["num_played_steps"]
-        self.total_samples = sum(
-            [len(game_history.root_values) for game_history in self.buffer.values()]
-        )
+        self.buffer = copy.deepcopy(buffer)
+        self.num_played_games = num_played_games
+        self.num_played_steps = num_played_steps
+
+        self.total_samples = sum([
+            len(game_history.root_values)
+            for game_history in self.buffer.values()
+        ])
         if self.total_samples != 0:
             print(
                 "Replay buffer initialized with {} samples ({} games).".format(
                     self.total_samples,
                     self.num_played_games,
-                )
-            )
+                ))
 
         # Fix random generator seed
-        numpy.random.seed(self.config.seed)
+        np.random.seed(self.config.seed)
 
-    def save_game(self, game_history, shared_storage=None,):
+    def save_game(
+        self,
+        game_history: GameHistory,
+        shared_storage=None,
+    ):
         if self.config.PER:
             if game_history.priorities is not None:
                 # Avoid read only array when loading replay buffer from disk
-                game_history.priorities = numpy.copy(game_history.priorities)
+                game_history.priorities = np.copy(game_history.priorities)
             else:
                 # Initial priorities for the prioritized replay (See paper appendix Training)
                 priorities = []
                 for i, root_value in enumerate(game_history.root_values):
+                    # yapf: disable
                     priority = (
-                        numpy.abs(
+                        np.abs(
                             root_value - self.compute_target_value(game_history, i)
-                        )
-                        ** self.config.PER_alpha
+                        ) ** self.config.PER_alpha
                     )
+                    # yapf: enable
                     priorities.append(priority)
 
-                game_history.priorities = numpy.array(priorities, dtype="float32")
-                game_history.game_priority = numpy.max(game_history.priorities)
+                game_history.priorities = np.array(
+                    priorities,
+                    dtype=np.float32,
+                )
+                game_history.game_priority = np.max(game_history.priorities)
 
         self.buffer[self.num_played_games] = game_history
         self.num_played_games += 1
@@ -67,8 +80,14 @@ class ReplayBuffer:
             del self.buffer[del_id]
 
         if shared_storage:
-            shared_storage.set_info.remote("num_played_games", self.num_played_games)
-            shared_storage.set_info.remote("num_played_steps", self.num_played_steps)
+            shared_storage.set_info.remote(
+                "num_played_games",
+                self.num_played_games,
+            )
+            shared_storage.set_info.remote(
+                "num_played_steps",
+                self.num_played_steps,
+            )
 
     def get_buffer(self):
         return self.buffer
@@ -86,13 +105,11 @@ class ReplayBuffer:
         weight_batch = [] if self.config.PER else None
 
         for game_id, game_history, game_prob in self.sample_n_games(
-            self.config.batch_size
-        ):
+                self.config.batch_size):
             game_pos, pos_prob = self.sample_position(game_history)
 
             values, rewards, policies, actions = self.make_target(
-                game_history, game_pos
-            )
+                game_history, game_pos)
 
             index_batch.append([game_id, game_pos])
             observation_batch.append(
@@ -100,28 +117,24 @@ class ReplayBuffer:
                     game_pos,
                     self.config.stacked_observations,
                     len(self.config.action_space),
-                )
-            )
+                ))
             action_batch.append(actions)
             value_batch.append(values)
             reward_batch.append(rewards)
             policy_batch.append(policies)
-            gradient_scale_batch.append(
-                [
-                    min(
-                        self.config.num_unroll_steps,
-                        len(game_history.action_history) - game_pos,
-                    )
-                ]
-                * len(actions)
-            )
+            gradient_scale_batch.append([
+                min(
+                    self.config.num_unroll_steps,
+                    len(game_history.action_history) - game_pos,
+                )
+            ] * len(actions))
             if self.config.PER:
-                weight_batch.append(1 / (self.total_samples * game_prob * pos_prob))
+                weight_batch.append(1 /
+                                    (self.total_samples * game_prob * pos_prob))
 
         if self.config.PER:
-            weight_batch = numpy.array(weight_batch, dtype="float32") / max(
-                weight_batch
-            )
+            weight_batch = np.array(weight_batch,
+                                    dtype="float32") / max(weight_batch)
 
         # observation_batch: batch, channels, height, width
         # action_batch: batch, num_unroll_steps+1
@@ -150,15 +163,18 @@ class ReplayBuffer:
         """
         game_prob = None
         if self.config.PER and not force_uniform:
-            game_probs = numpy.array(
-                [game_history.game_priority for game_history in self.buffer.values()],
+            game_probs = np.array(
+                [
+                    game_history.game_priority
+                    for game_history in self.buffer.values()
+                ],
                 dtype="float32",
             )
-            game_probs /= numpy.sum(game_probs)
-            game_index = numpy.random.choice(len(self.buffer), p=game_probs)
+            game_probs /= np.sum(game_probs)
+            game_index = np.random.choice(len(self.buffer), p=game_probs)
             game_prob = game_probs[game_index]
         else:
-            game_index = numpy.random.choice(len(self.buffer))
+            game_index = np.random.choice(len(self.buffer))
         game_id = self.num_played_games - len(self.buffer) + game_index
 
         return game_id, self.buffer[game_id], game_prob
@@ -170,19 +186,25 @@ class ReplayBuffer:
             for game_id, game_history in self.buffer.items():
                 game_id_list.append(game_id)
                 game_probs.append(game_history.game_priority)
-            game_probs = numpy.array(game_probs, dtype="float32")
-            game_probs /= numpy.sum(game_probs)
-            game_prob_dict = dict(
-                [(game_id, prob) for game_id, prob in zip(game_id_list, game_probs)]
+            game_probs = np.array(game_probs, dtype="float32")
+            game_probs /= np.sum(game_probs)
+            game_prob_dict = dict([
+                (game_id, prob)
+                for game_id, prob in zip(game_id_list, game_probs)
+            ])
+            selected_games = np.random.choice(
+                game_id_list,
+                n_games,
+                p=game_probs,
             )
-            selected_games = numpy.random.choice(game_id_list, n_games, p=game_probs)
         else:
-            selected_games = numpy.random.choice(list(self.buffer.keys()), n_games)
+            selected_games = np.random.choice(
+                list(self.buffer.keys()),
+                n_games,
+            )
             game_prob_dict = {}
-        ret = [
-            (game_id, self.buffer[game_id], game_prob_dict.get(game_id))
-            for game_id in selected_games
-        ]
+        ret = [(game_id, self.buffer[game_id], game_prob_dict.get(game_id))
+               for game_id in selected_games]
         return ret
 
     def sample_position(self, game_history, force_uniform=False):
@@ -192,11 +214,15 @@ class ReplayBuffer:
         """
         position_prob = None
         if self.config.PER and not force_uniform:
-            position_probs = game_history.priorities / sum(game_history.priorities)
-            position_index = numpy.random.choice(len(position_probs), p=position_probs)
+            position_probs = game_history.priorities / sum(
+                game_history.priorities)
+            position_index = np.random.choice(
+                len(position_probs),
+                p=position_probs,
+            )
             position_prob = position_probs[position_index]
         else:
-            position_index = numpy.random.choice(len(game_history.root_values))
+            position_index = np.random.choice(len(game_history.root_values))
 
         return position_index, position_prob
 
@@ -205,7 +231,7 @@ class ReplayBuffer:
         if next(iter(self.buffer)) <= game_id:
             if self.config.PER:
                 # Avoid read only array when loading replay buffer from disk
-                game_history.priorities = numpy.copy(game_history.priorities)
+                game_history.priorities = np.copy(game_history.priorities)
             self.buffer[game_id] = game_history
 
     def update_priorities(self, priorities, index_info):
@@ -221,49 +247,37 @@ class ReplayBuffer:
                 # Update position priorities
                 priority = priorities[i, :]
                 start_index = game_pos
-                end_index = min(
-                    game_pos + len(priority), len(self.buffer[game_id].priorities)
-                )
-                self.buffer[game_id].priorities[start_index:end_index] = priority[
-                    : end_index - start_index
-                ]
+                end_index = min(game_pos + len(priority),
+                                len(self.buffer[game_id].priorities))
+                self.buffer[game_id].priorities[
+                    start_index:end_index] = priority[:end_index - start_index]
 
                 # Update game priorities
-                self.buffer[game_id].game_priority = numpy.max(
-                    self.buffer[game_id].priorities
-                )
+                self.buffer[game_id].game_priority = np.max(self.buffer[game_id].priorities)
 
     def compute_target_value(self, game_history, index):
         # The value target is the discounted root value of the search tree td_steps into the
         # future, plus the discounted sum of all rewards until then.
         bootstrap_index = index + self.config.td_steps
         if bootstrap_index < len(game_history.root_values):
-            root_values = (
-                game_history.root_values
-                if game_history.reanalysed_predicted_root_values is None
-                else game_history.reanalysed_predicted_root_values
-            )
-            last_step_value = (
-                root_values[bootstrap_index]
-                if game_history.to_play_history[bootstrap_index]
-                == game_history.to_play_history[index]
-                else -root_values[bootstrap_index]
-            )
+            root_values = (game_history.root_values if
+                           game_history.reanalysed_predicted_root_values is None
+                           else game_history.reanalysed_predicted_root_values)
+            last_step_value = (root_values[bootstrap_index]
+                               if game_history.to_play_history[bootstrap_index]
+                               == game_history.to_play_history[index] else
+                               -root_values[bootstrap_index])
 
             value = last_step_value * self.config.discount**self.config.td_steps
         else:
             value = 0
 
         for i, reward in enumerate(
-            game_history.reward_history[index + 1:bootstrap_index + 1]
-        ):
+                game_history.reward_history[index + 1:bootstrap_index + 1]):
             # The value is oriented from the perspective of the current player
-            value += (
-                reward
-                if game_history.to_play_history[index]
-                == game_history.to_play_history[index + i]
-                else -reward
-            ) * self.config.discount**i
+            value += (reward if game_history.to_play_history[index]
+                      == game_history.to_play_history[index + i] else
+                      -reward) * self.config.discount**i
 
         return value
 
@@ -273,107 +287,95 @@ class ReplayBuffer:
         """
         target_values, target_rewards, target_policies, actions = [], [], [], []
         for current_index in range(
-            state_index, state_index + self.config.num_unroll_steps + 1
-        ):
+                state_index, state_index + self.config.num_unroll_steps + 1):
             value = self.compute_target_value(game_history, current_index)
 
             if current_index < len(game_history.root_values):
                 target_values.append(value)
-                target_rewards.append(game_history.reward_history[current_index])
+                target_rewards.append(
+                    game_history.reward_history[current_index])
                 target_policies.append(game_history.child_visits[current_index])
                 actions.append(game_history.action_history[current_index])
             elif current_index == len(game_history.root_values):
                 target_values.append(0)
-                target_rewards.append(game_history.reward_history[current_index])
+                target_rewards.append(
+                    game_history.reward_history[current_index])
                 # Uniform policy
-                target_policies.append(
-                    [
-                        1 / len(game_history.child_visits[0])
-                        for _ in range(len(game_history.child_visits[0]))
-                    ]
-                )
+                target_policies.append([
+                    1 / len(game_history.child_visits[0])
+                    for _ in range(len(game_history.child_visits[0]))
+                ])
                 actions.append(game_history.action_history[current_index])
             else:
                 # States past the end of games are treated as absorbing states
                 target_values.append(0)
                 target_rewards.append(0)
                 # Uniform policy
-                target_policies.append(
-                    [
-                        1 / len(game_history.child_visits[0])
-                        for _ in range(len(game_history.child_visits[0]))
-                    ]
-                )
-                actions.append(numpy.random.choice(self.config.action_space))
+                target_policies.append([
+                    1 / len(game_history.child_visits[0])
+                    for _ in range(len(game_history.child_visits[0]))
+                ])
+                actions.append(np.random.choice(self.config.action_space))
 
         return target_values, target_rewards, target_policies, actions
 
 
-@ray.remote
-class Reanalyse:
-    """
-    Class which run in a dedicated thread to update the replay buffer with fresh information.
-    See paper appendix Reanalyse.
-    """
+# @ray.remote
+# class Reanalyse:
+#     """
+#     Class which run in a dedicated thread to update the replay buffer with fresh information.
+#     See paper appendix Reanalyse.
+#     """
 
-    def __init__(self, initial_checkpoint, config):
-        self.config = config
+#     def __init__(self, initial_checkpoint, config):
+#         self.config = config
 
-        # Fix random generator seed
-        numpy.random.seed(self.config.seed)
-        torch.manual_seed(self.config.seed)
+#         # Fix random generator seed
+#         numpy.random.seed(self.config.seed)
+#         torch.manual_seed(self.config.seed)
 
-        # Initialize the network
-        self.model = models.MuZeroNetwork(self.config)
-        self.model.set_weights(initial_checkpoint["weights"])
-        self.model.to(torch.device("cuda" if self.config.reanalyse_on_gpu else "cpu"))
-        self.model.eval()
+#         # Initialize the network
+#         self.model = models.MuZeroNetwork(self.config)
+#         self.model.set_weights(initial_checkpoint["weights"])
+#         self.model.to(
+#             torch.device("cuda" if self.config.reanalyse_on_gpu else "cpu"))
+#         self.model.eval()
 
-        self.num_reanalysed_games = initial_checkpoint["num_reanalysed_games"]
+#         self.num_reanalysed_games = initial_checkpoint["num_reanalysed_games"]
 
-    def reanalyse(self, replay_buffer, shared_storage):
-        while ray.get(shared_storage.get_info.remote("num_played_games")) < 1:
-            time.sleep(0.1)
+#     def reanalyse(self, replay_buffer, shared_storage):
+#         while ray.get(shared_storage.get_info.remote("num_played_games")) < 1:
+#             time.sleep(0.1)
 
-        while ray.get(
-            shared_storage.get_info.remote("training_step")
-        ) < self.config.training_steps and not ray.get(
-            shared_storage.get_info.remote("terminate")
-        ):
-            self.model.set_weights(ray.get(shared_storage.get_info.remote("weights")))
+#         while ray.get(shared_storage.get_info.remote(
+#                 "training_step")) < self.config.training_steps and not ray.get(
+#                     shared_storage.get_info.remote("terminate")):
+#             self.model.set_weights(
+#                 ray.get(shared_storage.get_info.remote("weights")))
 
-            game_id, game_history, _ = ray.get(
-                replay_buffer.sample_game.remote(force_uniform=True)
-            )
+#             game_id, game_history, _ = ray.get(
+#                 replay_buffer.sample_game.remote(force_uniform=True))
 
-            # Use the last model to provide a fresher, stable n-step value (See paper appendix Reanalyze)
-            if self.config.use_last_model_value:
-                observations = numpy.array(
-                    [
-                        game_history.get_stacked_observations(
-                            i,
-                            self.config.stacked_observations,
-                            len(self.config.action_space),
-                        )
-                        for i in range(len(game_history.root_values))
-                    ]
-                )
+#             # Use the last model to provide a fresher, stable n-step value (See paper appendix Reanalyze)
+#             if self.config.use_last_model_value:
+#                 observations = numpy.array([
+#                     game_history.get_stacked_observations(
+#                         i,
+#                         self.config.stacked_observations,
+#                         len(self.config.action_space),
+#                     ) for i in range(len(game_history.root_values))
+#                 ])
 
-                observations = (
-                    torch.tensor(observations)
-                    .float()
-                    .to(next(self.model.parameters()).device)
-                )
-                values = models.support_to_scalar(
-                    self.model.initial_inference(observations)[0],
-                    self.config.support_size,
-                )
-                game_history.reanalysed_predicted_root_values = (
-                    torch.squeeze(values).detach().cpu().numpy()
-                )
+#                 observations = (torch.tensor(observations).float().to(
+#                     next(self.model.parameters()).device))
+#                 values = models.support_to_scalar(
+#                     self.model.initial_inference(observations)[0],
+#                     self.config.support_size,
+#                 )
+#                 game_history.reanalysed_predicted_root_values = (
+#                     torch.squeeze(values).detach().cpu().numpy())
 
-            replay_buffer.update_game_history.remote(game_id, game_history)
-            self.num_reanalysed_games += 1
-            shared_storage.set_info.remote(
-                "num_reanalysed_games", self.num_reanalysed_games
-            )
+#             replay_buffer.update_game_history.remote(game_id, game_history)
+#             self.num_reanalysed_games += 1
+#             shared_storage.set_info.remote("num_reanalysed_games",
+#                                            self.num_reanalysed_games)

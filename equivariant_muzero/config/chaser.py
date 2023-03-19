@@ -1,6 +1,4 @@
-from .replay_buffer_config import ReplayBufferConfig
 from .base_config import BaseConfig
-from procgen import ProcgenGym3Env
 
 
 class ChaserConfig(BaseConfig):
@@ -8,11 +6,6 @@ class ChaserConfig(BaseConfig):
     def __init__(
         self,
         num_envs: int = 1,
-        replay_buffer_size: int = int(1e6),
-        num_unroll_steps: int = 5,
-        td_steps: int = 10,
-        PRE: bool = True,
-        PRE_alpha: float = 1.,
         **kwargs,
     ) -> None:
         """
@@ -36,9 +29,3 @@ class ChaserConfig(BaseConfig):
             num_envs=num_envs,
             **kwargs,
         )
-
-        self.replay_buffer_size = replay_buffer_size,
-        self.num_unroll_steps = num_unroll_steps,
-        self.td_steps = td_steps,
-        self.PER = PRE
-        self.PER_alpha = PRE_alpha

@@ -1,16 +1,21 @@
 import torch
 import wandb
-from procgen import ProcgenGym3Env
-from equivariant_muzero.config.replay_buffer_config import ReplayBufferConfig
-from equivariant_muzero.config.chaser import ChaserConfig
+from equivariant_muzero.replay_buffer import ReplayBuffer
+from equivariant_muzero.config import ChaserConfig
+import ray
 
 if __name__ == "__main__":
-    env = ProcgenGym3Env(
-        num=1,
-        env_name="chaser",
+    config = ChaserConfig(
+        num_envs=1,
+    )
+    env = config.get_env()
+
+    ray.init()
+    replay_buffer = ReplayBuffer.remote(
+        config=config,
+        buffer=dict(),
     )
 
-    config = ChaserConfig()
 
     rew, obs, is_first = env.observe()
     obs = torch.tensor(obs["rgb"])
