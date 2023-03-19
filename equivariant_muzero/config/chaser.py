@@ -5,7 +5,6 @@ class ChaserConfig(BaseConfig):
 
     def __init__(
         self,
-        num_envs: int = 1,
         **kwargs,
     ) -> None:
         """
@@ -25,7 +24,7 @@ class ChaserConfig(BaseConfig):
         :type PRE_alpha: float, optional
         """
         super().__init__(
-            env_name="chaser",
-            num_envs=num_envs,
+            env_name="procgen:procgen-chaser-v0",
+            distribution_mode="easy",
             **kwargs,
         )

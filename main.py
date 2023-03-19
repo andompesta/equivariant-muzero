@@ -2,13 +2,16 @@ import torch
 import wandb
 from equivariant_muzero.replay_buffer import ReplayBuffer
 from equivariant_muzero.config import ChaserConfig
+from torchrl.envs.utils import check_env_specs
+
 import ray
 
 if __name__ == "__main__":
     config = ChaserConfig(
-        num_envs=1,
+        num_envs=4,
     )
     env = config.get_env()
+    check_env_specs(env)
 
     ray.init()
     replay_buffer = ReplayBuffer.remote(

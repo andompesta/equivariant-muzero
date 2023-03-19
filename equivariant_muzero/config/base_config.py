@@ -1,6 +1,10 @@
 # taken from https://raw.githubusercontent.com/werner-duvaud/muzero-general/0825bd544fc172a2e2dcc96d43711123222c4a2f/games/abstract_game.py
+import gym
 from abc import ABC, abstractmethod
-from procgen import ProcgenGym3Env
+from torchrl.envs import ParallelEnv
+from torchrl.envs.libs.gym import GymWrapper
+
+from equivariant_muzero.utils.env_utils import ProcGymWrapper
 from .reanalizer_config import ReanalyzerConfig
 from typing import Optional
 
@@ -50,11 +54,14 @@ class BaseConfig(ABC):
                     value,
                 )
 
-    def get_env(self) -> ProcgenGym3Env:
-        return ProcgenGym3Env(
-            num=self.num_envs,
-            env_name=self.env_name,
+    def get_env(self) -> GymWrapper:
+        return ParallelEnv(
+            num_workers=self.num_envs,
+            create_env_fn=self._get_env,
         )
+
+    def _get_env(self) -> GymWrapper:
+        return GymWrapper(ProcGymWrapper(gym.make(self.env_name).unwrapped))
 
     # @abstractmethod
     # def step(self, action):
