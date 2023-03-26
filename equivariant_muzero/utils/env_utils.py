@@ -1,12 +1,6 @@
 from typing import Optional
 
 from gym import Env, Wrapper
-from gym.utils.passive_env_checker import (
-    check_action_space,
-    check_observation_space,
-    env_render_passive_checker,
-    env_reset_passive_checker,
-)
 
 
 class ProcGymWrapper(Wrapper):
@@ -14,17 +8,19 @@ class ProcGymWrapper(Wrapper):
     def __init__(
         self,
         env: Env,
+        seed: Optional[int] = 42,
+        options: Optional[dict] = None,
         **kwargs,
     ):
         super().__init__(
             env,
             **kwargs,
         )
-
+        self.seed = seed
 
     def reset(
         self,
-        seed: Optional[int] = None,
+        seed: Optional[int] = 42,
         options: Optional[dict] = None,
     ):
         """Resets the environment that on the first call will run the `passive_env_reset_check`."""
