@@ -55,13 +55,22 @@ class BaseConfig(ABC):
                 )
 
     def get_env(self) -> GymWrapper:
-        return ParallelEnv(
-            num_workers=self.num_envs,
-            create_env_fn=self._get_env,
-        )
+        if self.num_envs <= 1:
+            return self._get_env()
+        else:
+            return ParallelEnv(
+                num_workers=self.num_envs,
+                create_env_fn=self._get_env,
+            )
 
     def _get_env(self) -> GymWrapper:
-        return GymWrapper(ProcGymWrapper(gym.make(self.env_name).unwrapped))
+        return GymWrapper(
+            # from gym to torchrl
+            ProcGymWrapper(
+                # from gym3 to gym
+                gym.make(self.env_name).unwrapped
+            )
+        )
 
     # @abstractmethod
     # def step(self, action):
