@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from procgen import ProcgenEnv
 
-from equivariant_muzero.replay_buffer import ReplayBuffer
+from equivariant_rl.replay_buffer import ReplayBuffer
 
 @ray.remote
 class SelfPlayer:

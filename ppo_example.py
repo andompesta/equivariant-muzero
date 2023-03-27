@@ -66,11 +66,11 @@ def main(cfg: "DictConfig"):  # noqa: F821
     )
 
     exp_name = generate_exp_name("PPO", cfg.exp_name)
-    # logger = get_logger(
-    #     logger_type=cfg.logger,
-    #     logger_name="ppo_logging",
-    #     experiment_name=exp_name,
-    # )
+    logger = get_logger(
+        logger_type=cfg.logger,
+        logger_name="ppo_logging",
+        experiment_name=exp_name,
+    )
     video_tag = exp_name if cfg.record_video else ""
 
     key, init_env_steps, stats = None, None, None
@@ -130,14 +130,17 @@ def main(cfg: "DictConfig"):  # noqa: F821
         # ],
     )
 
+    print("create recorder")
     recorder = transformed_env_constructor(
         cfg,
-        video_tag=video_tag,
+        # video_tag=video_tag,
         norm_obs_only=True,
         obs_norm_state_dict=obs_norm_state_dict,
         logger=logger,
         use_env_creator=False,
     )()
+
+    print("recorder created")
     if isinstance(create_env_fn, ParallelEnv):
         raise NotImplementedError("This behaviour is deprecated")
     elif isinstance(create_env_fn, EnvCreator):

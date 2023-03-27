@@ -4,8 +4,8 @@ from typing import Any, Dict
 import ray
 import numpy as np
 import torch
-from equivariant_muzero.config import BaseConfig
-from equivariant_muzero.monte_carlo_tree_search import GameHistory
+from equivariant_rl.config import BaseConfig
+from equivariant_rl.monte_carlo_tree_search import GameHistory
 from .checkpoint import Checkpoint
 
 

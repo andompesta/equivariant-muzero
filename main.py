@@ -1,20 +1,13 @@
 import torch
 import wandb
-from equivariant_muzero.replay_buffer import ReplayBuffer
-from equivariant_muzero.config import ChaserConfig
-from equivariant_muzero.utils.images import observation_as_image
+
 from torchrl.envs.utils import check_env_specs
 
-from torchrl.envs import (
-    Compose,
-    NoopResetEnv,
-    ObservationNorm,
-    StepCounter,
-    ToTensorImage,
-    TransformedEnv,
-)
 
-import ray
+from equivariant_rl.replay_buffer import ReplayBuffer
+from equivariant_rl.config import ChaserConfig
+from equivariant_rl.env.utils import make_transformed_env
+
 
 if __name__ == "__main__":
     config = ChaserConfig(
@@ -22,18 +15,9 @@ if __name__ == "__main__":
     )
     env = config.get_env()
     check_env_specs(env)
+    env = make_transformed_env(env)
 
-    env = TransformedEnv(
-        env,
-        Compose(
-            StepCounter(),
-            ToTensorImage(),
-            # ObservationNorm(),
-        ),
-    )
 
-    state = env.reset()
-    observation_as_image(state["pixels"])
 
     ray.init()
     replay_buffer = ReplayBuffer.remote(

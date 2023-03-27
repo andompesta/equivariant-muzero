@@ -2,7 +2,7 @@ env_library: gym  # env_library used for the simulated environment.
 env_name: HalfCheetah-v4  # name of the environment to be created. Default=Humanoid-v2
 frame_skip: 2
 async_collection: 0
-record_video: 1
+record_video: 0
 normalize_rewards_online: 1
 normalize_rewards_online_scale: 1
 normalize_rewards_online_decay: 0.0  # normalize rewards with latest collected batch
@@ -27,4 +27,5 @@ loss_function: smooth_l1
 batch_transform: 1
 entropy_coef: 0.1
 default_policy_scale: 1.0
-logger: wandb
+# logger: wandb
+distribution: tanh_normal
